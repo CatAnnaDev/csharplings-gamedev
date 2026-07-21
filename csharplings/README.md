@@ -1,7 +1,7 @@
 # csharplings
 
-Apprendre le C# en reparant du code cassé. 43 exercices, du premier point-virgule
-jusqu'aux patterns qu'on écrit tous les jours en gamedev.
+Apprendre le C# en reparant du code cassé. 91 exercices, du premier point-virgule
+jusqu'à ce qui se passe réellement en RAM quand ton jeu tourne.
 
 ## Démarrer
 
@@ -51,9 +51,15 @@ Regarder la solution n'est pas de la triche, mais lis l'indice d'abord.
 | `05_strings` | interpolation, manipulation, immuabilité |
 | `06_collections` | tableaux, `List<T>`, `Dictionary<K,V>` |
 | `07_oop` | classes, propriétés, héritage, interfaces, struct, enum |
-| `08_advanced` | génériques, null, exceptions, LINQ, lambdas, events, async |
+| `08_advanced` | génériques, null, exceptions, LINQ, lambdas, events, async, records, pattern matching, tuples, opérateurs, extensions, `yield`, `IDisposable`, `Span` |
 | `09_godot` | cycle de vie, delta time, GetNode, signaux, singleton |
 | `10_gamedev` | vecteurs, cooldowns, lissage, pooling, grilles |
+| `11_patterns` | machine à états, commandes annulables, bus d'événements, composition, services, données partagées |
+| `12_math` | angles, easing, collisions, rayons, aléatoire à graine, béziers |
+| `13_systems` | inventaire, calcul de dégâts, pathfinding, pas de temps fixe, grille spatiale, buffer d'entrée, sauvegarde |
+| `14_engine` | boucle de rendu vs physique, cache de nœuds, actions d'entrée, gravité et saut, masques de collision, caméra, coroutines, tweens |
+| `15_perf` | zéro allocation, boxing, texte et HUD, suppression en boucle, structs et réutilisation, étalement du travail |
+| `16_memory` | pile et tas, `ref`/`out`/`in`, delegates et fuites, GC et générations, copies défensives |
 
 ## La section Godot
 
@@ -72,6 +78,97 @@ gérer un temps de recharge, lisser un mouvement, recycler des objets, convertir
 case de grille en pixels.
 
 Le code est du C# pur : il marche tel quel sous Unity aussi.
+
+## Faire un vrai jeu
+
+`11_patterns`, `12_math` et `13_systems` sont la partie « on assemble ».
+Chaque exercice est un morceau que tu retrouveras tel quel dans ton projet :
+
+- une machine à états qui refuse les transitions impossibles
+- un historique annuler/refaire à deux piles
+- un bus où le score, les quêtes et le son réagissent sans se connaître
+- de quoi viser, tourner par le plus court chemin, savoir ce qu'un garde voit
+- un aléatoire à graine qui rejoue exactement le même donjon
+- un pathfinding, une grille spatiale, un pas de temps fixe
+- le buffer d'entrée et le coyote time, les deux astuces qui rendent un
+  platformer agréable
+- une sauvegarde qui survit à un fichier incomplet
+
+Ça reste du C# pur, sans Godot : tout tourne dans le terminal.
+
+## Les réflexes moteur
+
+`14_engine` est la section « ce que tu fais tous les jours », valable Godot **et** Unity :
+
+- `_Process` contre `_PhysicsProcess` (= `Update` contre `FixedUpdate`), et pourquoi la
+  caméra doit passer après sa cible (`ProcessPriority`, = `LateUpdate`)
+- cacher `GetNode` / `GetComponent` au lieu de chercher 60 fois par seconde
+- « enfoncée » contre « vient d'être enfoncée », et la diagonale qui va 41 % trop vite
+- déduire la vitesse de saut d'une hauteur voulue, friction sans repartir en arrière
+- les masques de collision (une couche par bit, et les valeurs sont des puissances de deux)
+- caméra : zone morte, bornes du niveau, secousse en trauma²
+- des coroutines maison en `IEnumerator` — le modèle exact de Unity, en trente lignes
+- un tween qui atterrit pile sur la cible et ne prévient qu'une fois
+
+## Les optimisations
+
+`15_perf` ne se contente pas d'expliquer : **les vérifications comptent les octets alloués.**
+`GC.GetAllocatedBytesForCurrentThread()` mesure vraiment, donc un exercice échoue si ton
+code alloue dans la boucle chaude.
+
+- une boucle `for` sur une `List` doit rendre **0 octet** ; le même calcul en LINQ, non
+- une structure sans `IEquatable` utilisée comme clé de dictionnaire s'emballe dans un
+  objet à chaque comparaison — mesurable, et invisible autrement
+- un `foreach` derrière `IEnumerable<T>` alloue son énumérateur ; derrière `List<T>`, non
+- un HUD qui ne reconstruit son texte que quand la valeur change
+- retirer d'une liste sans sauter d'éléments, et la suppression par échange
+- 1000 objets recréés par frame contre un tableau de structs réutilisé
+- étaler le travail sur plusieurs frames, et en faire moins quand c'est loin
+
+## Ce qui se passe en RAM
+
+`16_memory` est la section « arrête de deviner ». Elle mesure au lieu d'expliquer :
+
+- **un objet vide coûte 24 octets** — l'en-tête que tout objet du tas porte. Un `int` de
+  plus est gratuit (il tient dans le remplissage), le quatrième coûte 8 octets.
+- **1000 structures de 20 octets = une seule allocation de 20 024 octets**, contiguë.
+  1000 objets équivalents, ce sont 1000 allocations éparpillées.
+- **une lambda qui ne capture rien : 0 octet** (elle est mise en cache). Dès qu'elle
+  capture une variable locale : 96 octets, à chaque passage.
+- **200 000 objets jetables → collections gen0 réelles ; le même travail avec un tampon
+  réutilisé → zéro.** Une collection gen0 est rapide, mais c'est une *pause*, et le
+  budget d'une frame est de 16 ms.
+- un objet qui survit à une collection est **promu** en génération supérieure.
+
+Et le langage qui va avec :
+
+- ce que contient vraiment une variable : une structure **est** la valeur, un objet n'est
+  qu'une adresse — et un paramètre objet passe cette adresse **par copie**, ce qui explique
+  pourquoi réassigner le paramètre ne change rien dehors
+- `ref` / `out` / `in`, les `ref` locals et les `ref` returns : modifier un élément de
+  tableau **en place**, sans jamais le recopier
+- les delegates en vrai : multicast, valeur de retour du dernier seulement, une exception
+  qui tue silencieusement le reste de la chaîne, et surtout `-=` avec une nouvelle lambda
+  qui **ne désabonne rien** — la fuite mémoire la plus répandue en gamedev
+- les copies défensives : appeler une méthode sur un champ `readonly` de type structure
+  travaille sur une copie. Le code compile, tourne, et ne fait rien.
+
+## Godot, Unity, et le niveau de C#
+
+Godot 4 tourne en .NET 6 (4.0–4.2) puis .NET 8 (4.3+). **Unity, lui, n'est pas en .NET 6** :
+Unity 2021.3 → Unity 6 utilisent Mono/IL2CPP avec l'API .NET Standard 2.1 et un
+`LangVersion` figé à **C# 9**. Si tu veux du code qui se colle dans les deux, la contrainte
+réelle est donc C# 9, plus stricte que .NET 6.
+
+Presque tout ici tient dans C# 9 : `record`, `init`, `new()`, les patterns relationnels
+(`< 100`, `and`, `or`), `Span`, `stackalloc`, `HashCode.Combine`,
+`GC.GetAllocatedBytesForCurrentThread`. Deux exceptions, signalées dans leur consigne :
+
+- `patterns1` utilise les **motifs de liste** (`[1, .., 3]`) — C# 11, Godot oui, Unity non
+- `bus1` utilise `record struct` — C# 10, Godot oui, Unity non (écris un `readonly struct`)
+
+Les `namespace X;` en fin de ligne sont du C# 10 aussi : c'est le style de l'outil, pas du
+code destiné à être collé tel quel dans un projet Unity.
 
 ## Et après
 

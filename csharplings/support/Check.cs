@@ -52,6 +52,17 @@ public static class Check
         throw new CheckFailedException($"{what}\n      attendu : {expected} (a {tolerance} pres)\n      obtenu  : {actual}");
     }
 
+    public static void Near(Vector2 actual, Vector2 expected, string what, double tolerance = 0.001)
+    {
+        if (Mathf.Abs(actual.X - expected.X) <= tolerance && Mathf.Abs(actual.Y - expected.Y) <= tolerance)
+        {
+            Pass(what, actual);
+            return;
+        }
+
+        throw new CheckFailedException($"{what}\n      attendu : {expected} (a {tolerance} pres)\n      obtenu  : {actual}");
+    }
+
     public static void Sequence<T>(IEnumerable<T> actual, IEnumerable<T> expected, string what)
     {
         List<T> a = actual?.ToList() ?? new List<T>();
